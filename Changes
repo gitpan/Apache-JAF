@@ -1,0 +1,13 @@
+Revision history for Perl extension Apache::JAF.
+
+0.03 Mon Mar 24 15:47:12 2003
+        - initial POD draft
+
+0.02  Mon Mar 24 12:35:05 2003
+        - some optimizations in methods calling pipeline
+        - new configuration directive Apache_JAF_Debug
+          to set debug_level property from Apache conf
+
+0.01  Thu Mar 20 13:20:07 2003
+	- original version; created by h2xs 1.21 with options
+		-AXn JAF
