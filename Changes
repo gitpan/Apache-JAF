@@ -1,5 +1,9 @@
 Revision history for Perl extension Apache::JAF.
 
+0.05 Mon Mar 31 13:39:22 2003
+        - removed some debug code
+        - POD changes
+
 0.04 Fri Mar 28 13:02:21 2003
         - loading page mini-handlers at compile-time
         - POD changes
