@@ -66,11 +66,11 @@ WriteMakefile(
     'NAME'		=> 'Apache::JAF',
     'VERSION_FROM'	=> 'lib/Apache/JAF.pm',
     'PREREQ_PM'		=> {
-      Apache => 0,
-      Apache::Request => 0,
-      Template => 2.08,
-      DirHandle => 0,
-      Data::Dumper => 0
+      'Apache' => 0,
+      'Apache::Request' => 0,
+      'Template' => 2.08,
+      'DirHandle' => 0,
+      'Data::Dumper' => 0,
     },
     PMLIBDIRS => [ 'lib', 'lib/JAF', 'lib/Apache' ],
 );

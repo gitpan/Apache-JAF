@@ -1,5 +1,8 @@
 Revision history for Perl extension Apache::JAF.
 
+0.06 Tue May 6 15:50:13 2003
+	- bugfix to Makefile.PL
+
 0.05 Mon Mar 31 13:39:22 2003
         - removed some debug code
         - POD changes

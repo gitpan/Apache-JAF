@@ -15,7 +15,7 @@ use Apache::Constants qw(:common REDIRECT);
 use Apache::File ();
 
 our $WIN32 = $^O =~ /win32/i;
-our $VERSION = do { my @r = (q$Revision: 0.05 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
+our $VERSION = do { my @r = (q$Revision: 0.06 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
 
 # Constructor
 ################################################################################
@@ -422,21 +422,21 @@ Apache::JAF -- mod_perl and Template-Toolkit web applications framework
 
 =over 4
 
-=item controller -- mod_perl module that drives your application
+=item controller -- a mod_perl module that drives your application
 
  package Apache::JAF::MyJAF;
  use strict;
  use JAF::MyJAF; # optional
- # loading mini-handlers during compile-time
- # this folder will be used by default but you're able to change it
+ # loading mini-handlers during compilation time
+ # this folder will be used by default but you can change it
  use Apache::JAF qw(/examples/site/modules/Apache/JAF/MyJAF/pages);
  our @ISA = qw(Apache::JAF);
 
  # determine handler to call 
  sub setup_handler {
    my ($self) = @_;
-   # the page handler for every uri for sample site is 'do_index'
-   # you should swap left and right || parts for real application
+   # the page handler for each URI of sample site is 'do_index'
+   # you should swap left and right ||-parts for real application
    my $handler = 'index' || shift @{$self->{uri}};
    return $handler;
  }
@@ -451,7 +451,7 @@ Apache::JAF -- mod_perl and Template-Toolkit web applications framework
  }
  1;
 
-=item page handler -- controller's method that makes one (or may be several) pages
+=item page handler -- controller's method that makes one (or more) pages
 
  sub do_index {
    my ($self) = @_;
@@ -461,7 +461,7 @@ Apache::JAF -- mod_perl and Template-Toolkit web applications framework
    return OK;
  }
 
-=item modeller -- the module that encapsulates application business-logic
+=item modeller -- a module that encapsulates application business-logic
 
  package JAF::MyJAF;
  use strict;
@@ -487,9 +487,9 @@ Apache::JAF -- mod_perl and Template-Toolkit web applications framework
     SetHandler perl-script
     PerlHandler Apache::JAF::MyJAF
     PerlSetVar Apache_JAF_Templates /examples/site/templates
-    # optional -- default value is used in example
+    # optional (default value is used in example)
     PerlSetVar Apache_JAF_Modules /examples/site/modules/Apache/JAF/MyJAF/pages
-    # optional -- default value is used in example
+    # optional (default value is used in example)
     PerlSetVar Apache_JAF_Compiled /tmp
   </Location>
 
@@ -518,9 +518,9 @@ and the I<Viewer> is set of the templates using Template-Toolkit markup syntax
 
 =back
 
-This separation heavily simplifies dynamic site developmet by designers and programmers team.
-Each of the programmers working on own part of the project writing separate controller's parts
-and designers are working on visual presentation of templates.
+This separation hardly simplifies the dynamic development of sites by designers and programmers.
+Each programmer works on own part of the project writing separate controller's parts. 
+Designers have to work only on visual performance of templates.
 
 =head2 Suggested file structure
 
@@ -538,8 +538,8 @@ Suggested site's on-disk structure is:
 
 =item I<data> 
 
-document_root for site. All static files such JavaScripts, pictures, CSSs and so on
-mus be placed here
+document_root of site. All static files (e.g. JavaScripts, pictures, CSSs etc)
+must be placed here
 
 =item I<modules>
 
@@ -547,35 +547,34 @@ Storage place for site modules -- must be in C<@INC>'s
 
 =item I<templates>
 
-Here where you have to place your site templates. Framework is designed to reproduce
-site-structure in this folder. It's just like document_root for static site.
+The place of your site's templates. Framework is designed to reproduce
+site's structure in this folder. It's just like document_root for static site.
 
 =back
 
 =head2 Request processing pipeline
 
 The C<Apache::JAF::handler> intercepts every request for specified location, and 
-process it own way:
+process it's own way:
 
 =over 4
 
 =item 1
 
-If requested file exists on disk there is nothing happened. The handle throws request
-away with C<DECLINE>.
+If requested file exists then nothing happens. The handle declines request with C<DECLINE>.
 
 =item 2
 
-Otherwise instance of Apache::JAF's descendant is created and C<setup_handler> method is called. 
-You B<must override> this method and return determined handler name. Usually it's first part of 
-uri or just C<index>. Also handlers from C<Apache_JAF_Modules> folder is loaded into package's 
+Otherwise the instance of Apache::JAF's descendant is created and C<setup_handler> method is called. 
+You B<must override> this method and return determined handler's name. Usually it's the first part of 
+URI or just C<index>. Also handlers from C<Apache_JAF_Modules> folder is loaded into package's 
 namespace if C<$self-E<gt>{debug_level}> E<gt> 0 or handlers were not loaded during module
 compilation.
 
 =item 3
 
-Then goes C<site_handler> calling. If you have common tasks for every handler you can
-override it. C<site_handler> calls your own handler. It's name returned by C<setup_handler>. 
+Then goes C<site_handler> calling. If you have common tasks for each handler you can
+override it. C<site_handler> calls your own handler. It's name is returned by C<setup_handler>. 
 Usually this "mini-handler" is I<very> simple. It have to be implemented as package method with
 C<do_I<E<lt>handler nameE<gt>>> name. You have to fill C<$self-E<gt>{res}> hash with
 result and return Apache constant according to handler's logic (C<OK>, C<NOT_FOUND>, 
@@ -583,10 +582,10 @@ C<FORBIDDEN> and so on). The sample is shown in L<"SYNOPSIS">.
 
 =item 4
 
-If result of previous step return OK, and C<$self-E<gt>{type}> property is C<text/*> 
-result of processing template is printing to the client. If type of result type is not 
+If the previous step fulfills correctly, and C<$self-E<gt>{type}> property is C<text/*> then
+result of processing template returns to client. If type of result is not 
 like text, one more method is needed to implement: C<on_send_I<E<lt>handeler nameE<gt>>_data>.
-It must print binary data back to the client. This way you may create handlers for
+It must return binary data to client. This way you may create handlers for
 dynamic generation of images, M$ Excel workbooks and any other type of data.
 
 =back
@@ -597,13 +596,13 @@ dynamic generation of images, M$ Excel workbooks and any other type of data.
 
 =item setup_handler
 
-This method you must override in your Apache::JAF descendant. You must return handler 
-name (that later will be called as I<do_E<lt>handler nameE<gt>> method) from it depending 
-on uri user requested. You may set site-wide properties such as I<debug_level>, I<header> 
+This method you must override in your Apache::JAF descendant. You must return handler's 
+name (that will be called as I<do_E<lt>handler nameE<gt>> method later) from it depending 
+on URI requested by user. You may set site-wide properties such as I<debug_level>, I<header> 
 or I<footer>, templates and includes extensions and so on. If handler name depends on 
-application logic implemented in modeller you have to create modeller in this method 
+application logic implemented in modeller then you have to create modeller in this method 
 and store it in I<m> property for later use.
-The simpliest I<setup_handler> is shown in L<"SYNOPSIS">.
+The primary I<setup_handler> is shown in L<"SYNOPSIS">.
 
 =item site_handler
 
@@ -628,9 +627,9 @@ Using C<Apache::Filter> flag.
 
 =item uri
 
-Reference to the array of current uri (splitted by slash). Usually you will need modify
-it in L<"setup_handler"> method to determine page-handler name. Remained array will be passed
-to the page-handler method as parameters list.
+Reference to the array of current URI (splitted by slash). Usually you need to modify
+it in L<"setup_handler"> method to determine page's handler name. Remained array will be passed
+to the page-handler method as a list of parameters.
 
 =item res
 
@@ -638,8 +637,8 @@ Hash reference that holds page-handler results.
 
 =item expand_path
 
-Boolean flag for complex-name-handlers change '/' in handler name in place of '_' to 
-provide real-like document tree in the templates folder.
+Boolean flag for complex-name-handlers changes '_' to '/' in handler's name. 
+It provides real-like document tree in the templates folder.
 
 =item debug_level
 
@@ -685,9 +684,10 @@ For internal use only.
 
 =head2 Implementing handlers
 
-Page handlers are simple. It's methods with C<do_E<lt>handler nameE<gt>> name. You have to
+Page handlers are simple. 
+Their methods are with C<do_E<lt>handler nameE<gt>> name. You have to
 analyse given parameters, fill out C<$self-E<gt>{res}> hash with handler results that will 
-be processed with template and return one of the C<Apache::Constants>. Usually it's C<OK>, 
+be processed with template and return one of C<Apache::Constants>. Usually it's C<OK>, 
 but may be C<NOT_FOUND> if parameters passed to handlers are invalid for some reason.
 
 Look into F<examples/*> folder in the distribution package for some guidelines.
@@ -728,9 +728,9 @@ Templates syntax is described at L<http://www.template-toolkit.org/docs/plain/Ma
 
 =item Apache_JAF_Prefix
 
-Number of uri parts (between slashes) or path that must be removed from request uri.
-Useful for implementing dynamic part of almost static site. It's simplifies page handlers
-names.
+Number of URI parts (between slashes) or path that must be removed from request URI.
+Useful for implementing dynamic part of almost static site. It simplifies names of page handlers.
+
 
 =item Apache_JAF_Templates
 
