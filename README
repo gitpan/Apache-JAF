@@ -6,7 +6,9 @@ SYNOPSIS
          package Apache::JAF::MyJAF;
          use strict;
          use JAF::MyJAF; # optional
-         use Apache::JAF;
+         # loading mini-handlers during compile-time
+         # this folder will be used by default but you're able to change it
+         use Apache::JAF qw(/examples/site/modules/Apache/JAF/MyJAF/pages);
          our @ISA = qw(Apache::JAF);
 
          # determine handler to call 
@@ -62,13 +64,14 @@ SYNOPSIS
             SetHandler perl-script
             PerlHandler Apache::JAF::MyJAF
             PerlSetVar Apache_JAF_Templates /examples/site/templates
+            # optional -- default value is shown
             PerlSetVar Apache_JAF_Modules /examples/site/modules/Apache/JAF/MyJAF/pages
+            # optional -- default value is shown
             PerlSetVar Apache_JAF_Compiled /tmp
           </Location>
 
 DESCRIPTION
   Introduction
-
     Apache::JAF is designed for creation web applications based on MVC
     (Model-View-Controller) concept.
 
@@ -85,7 +88,6 @@ DESCRIPTION
     visual presentation of templates.
 
   Suggested file structure
-
     Suggested site's on-disk structure is:
 
       site
@@ -101,7 +103,7 @@ DESCRIPTION
         CSSs and so on mus be placed here
 
     *modules*
-        Storage place for site modules -- must be in "@INC"'s
+        Storage place for site modules -- must be in @INC's
 
     *templates*
         Here where you have to place your site templates. Framework is
@@ -109,7 +111,6 @@ DESCRIPTION
         document_root for static site.
 
   Request processing pipeline
-
     The "Apache::JAF::handler" intercepts every request for specified
     location, and process it own way:
 
@@ -119,40 +120,33 @@ DESCRIPTION
     2   Otherwise instance of Apache::JAF's descendant is created and
         "setup_handler" method is called. You must override this method and
         return determined handler name. Usually it's first part of uri or
-        just "index". Also handlers from "Apache_JAF_Modules" folder are
-        loaded into package's namespace.
+        just "index". Also handlers from "Apache_JAF_Modules" folder is
+        loaded into package's namespace if "$self->{debug_level}" > 0 or
+        handlers were not loaded during module compilation.
 
     3   Then goes "site_handler" calling. If you have common tasks for every
-        handler you have to override it. "site_handler" calls your own
-        handler. It's name returned by "setup_handler". Usually this
-        "mini-handler" is *very* simple. It have to be implemented as
-        package method with "do_*<handler name>*" name. You have to fill
-        "$self->{res}" hash with result and return Apache constant according
-        to handler's logic ("OK", "NOT_FOUND", "FORBIDDEN" and so on). The
-        sample is shown in the section on "SYNOPSIS".
+        handler you can override it. "site_handler" calls your own handler.
+        It's name returned by "setup_handler". Usually this "mini-handler"
+        is *very* simple. It have to be implemented as package method with
+        "do_*<handler name>*" name. You have to fill "$self->{res}" hash
+        with result and return Apache constant according to handler's logic
+        ("OK", "NOT_FOUND", "FORBIDDEN" and so on). The sample is shown in
+        "SYNOPSIS".
 
     4   If result of previous step return OK, and "$self->{type}" property
-        is "text/*" result of processing template is printing to th client.
-        If type of result is not text, then one more method must be
-        implemented: "on_send_*<handeler name>*_data". It have to print
-        binary data back to the client. This way you may create handlers for
-        dynamic generation of images, MS Excel workbooks and any other type
+        is "text/*" result of processing template is printing to the client.
+        If type of result type is not like text, one more method is needed
+        to implement: "on_send_*<handeler name>*_data". It must print binary
+        data back to the client. This way you may create handlers for
+        dynamic generation of images, M$ Excel workbooks and any other type
         of data.
 
   Apache::JAF descendant methods
-
     setup_handler
-        *blah-blah-blah*
-
     site_handler
-        *blah-blah-blah*
 
   Implementing handlers
-
-    *blah-blah-blah*
-
   Templates structure and syntax
-
     Template for specific handler consists of:
 
     1 default.inc
@@ -173,7 +167,7 @@ DESCRIPTION
     header and footer for handler that produces not "text/*" content.
 
     Templates syntax is described at
-    http://www.template-toolkit.org/docs/plain/Manual/.
+    <http://www.template-toolkit.org/docs/plain/Manual/>.
 
 CONFIGURATION
     Apache_JAF_Prefix
@@ -218,13 +212,14 @@ CONFIGURATION
 
 SEE ALSO
     *   mod_perl -- Perl and Apache integration project
-        (http://perl.apache.org)
+        (<http://perl.apache.org>)
 
-    *   Template-Toolkit -- template processing system (http://www.tt2.org)
+    *   Template-Toolkit -- template processing system
+        (<http://www.tt2.org>)
 
     *   examples/* -- sample site driven by Apache::JAF
 
-    *   http://jaf.webzavod.ru -- Apache::JAF companion website
+    *   <http://jaf.webzavod.ru> -- Apache::JAF companion website
 
 AUTHOR
     Greg "Grishace" Belenky <greg@webzavod.ru>

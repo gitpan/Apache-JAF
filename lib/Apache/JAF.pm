@@ -15,7 +15,7 @@ use Apache::Constants qw(:common REDIRECT);
 use Apache::File ();
 
 our $WIN32 = $^O =~ /win32/i;
-our $VERSION = do { my @r = (q$Revision: 0.03 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
+our $VERSION = do { my @r = (q$Revision: 0.04 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
 
 # Constructor
 ################################################################################
@@ -27,7 +27,8 @@ sub new {
   bless ($self, $ref);
 
   # r - request (filter-aware)
-  $self->{r} = $r->dir_config('Filter') =~ /^on/i ? $r->filter_register() : $r;
+  $self->{filter} = $r->dir_config('Filter') =~ /^on/i;
+  $self->{r} = $self->{filter} ? $r->filter_register() : $r;
   my $prefix = $r->dir_config('Apache_JAF_Prefix');
 
   # prefix - path|number of subdirs that must be removed from uri
@@ -98,21 +99,34 @@ sub new {
   return $self
 }
 
+# Try to load handlers at compile-time
+################################################################################
+sub import {
+  my $package = (caller())[0];
+  my $dir = $_[1];
+
+  open OUT, ">>/usr/web/jaf.webzavod.ru/scripts/import.out";
+  print OUT "$package => $dir\n\n";
+  close OUT;
+
+  load_handlers(undef, $package, $dir) if $dir && $package ne __PACKAGE__;
+}
+
 # Load additional handlers
 ################################################################################
 sub load_handlers {
-  my ($self, $package) = @_;
-  my $dir = $self->{r}->dir_config('Apache_JAF_Modules');
+  my ($self, $package, $dir) = @_;
+  $dir ||= $self->{r}->dir_config('Apache_JAF_Modules') if $self;
 
   unless ($dir) {
     $dir = $INC{ do { (my $dummy = $package) =~ s/::/\//g; "$dummy.pm"; } };
     $dir =~ s/\.pm$/\/pages\//;
+    undef $dir unless -d $dir;
   }
-
-  my $dh = DirHandle->new($dir);
 
   eval "\$${package}::HANDLERS_LOADED = 1;";
 
+  my $dh = DirHandle->new($dir);
   foreach my $file ($dh->read) {
     next if $file !~ /\.pm$/;
 
@@ -121,10 +135,11 @@ sub load_handlers {
     my $code = <PM>;
     close PM;
     $code = "package $package; use strict; $code";
-    $self->warn(9, "Loading $dir/$file:\n$code");
+    $self && $self->warn(9, "Loading $dir/$file:\n$code");
     eval "$code";
     if ($@) {
-      $self->warn(0, "$dir/$file - compile error: $@");
+      my $err = "$dir/$file - compile error: $@";
+      $self && $self->warn(0, $err) || die $err;
       eval "\$${package}::HANDLERS_LOADED = 0;";
     }
   }
@@ -209,6 +224,7 @@ sub process_template {
     $self->warn(10, $result);
   }
 
+  undef $tt;
   return \$result;
 }
 
@@ -220,10 +236,10 @@ sub handler ($$) {
   eval "use Time::HiRes ()";
   $time = Time::HiRes::time() unless $@;
 
-   if (-f $r->filename()) {
-     $r->set_handlers(PerlHandler => undef);
-     return DECLINED;
-   }
+  if (-f $r->filename()) {
+    $r->set_handlers(PerlHandler => undef);
+    return DECLINED;
+  }
 
   $self = $self->new($r) unless ref($self);
   unless ($self) {
@@ -231,9 +247,8 @@ sub handler ($$) {
     return SERVER_ERROR;
   }
 
-  $self->{status} = $self->site_handler();
-
   my $result;
+  $self->{status} = $self->site_handler();
   $result = $self->process_template() if $self->{status} == OK && $self->{type} =~ /^text/ && !$self->{r}->header_only;
 
   if ($self->{status} == OK) {
@@ -242,10 +257,9 @@ sub handler ($$) {
 
     if ($self->{type} =~ /^text/) {
       #
-      # Apache::Filter->print() must(?) be patched for printing referenced scalars:
-      # print STDOUT ref $_ ? $$_ : $_ foreach (@_);
+      # Apache::Filter->print() must(?) be patched for printing referenced scalars
       #
-      $self->{r}->print($$result);
+      $self->{r}->print($self->{filter} ? $$result : $result);
     } else {
       #
       # if handler set $self->{type} other than text/(html|plain)
@@ -259,7 +273,11 @@ sub handler ($$) {
   $self->warn(3, 'Response headers: ' . Dumper {($self->{status} == OK) ? $self->{r}->headers_out() : $self->{r}->err_headers_out()});
   $self->warn(1, sprintf 'Request processed in %0.3f sec', Time::HiRes::time() - $time) if $time;
 
-  return $self->{status}
+  my $status = $self->{status};
+  undef $result;
+  undef $self;
+
+  return $status
 }
 
 # Global Apache::JAF handler. If you want some stuff before (and|or) after
@@ -414,7 +432,9 @@ Apache::JAF -- mod_perl and Template-Toolkit web applications framework
  package Apache::JAF::MyJAF;
  use strict;
  use JAF::MyJAF; # optional
- use Apache::JAF;
+ # loading mini-handlers during compile-time
+ # this folder will be used by default but you're able to change it
+ use Apache::JAF qw(/examples/site/modules/Apache/JAF/MyJAF/pages);
  our @ISA = qw(Apache::JAF);
 
  # determine handler to call 
@@ -472,7 +492,9 @@ Apache::JAF -- mod_perl and Template-Toolkit web applications framework
     SetHandler perl-script
     PerlHandler Apache::JAF::MyJAF
     PerlSetVar Apache_JAF_Templates /examples/site/templates
+    # optional -- default value is shown
     PerlSetVar Apache_JAF_Modules /examples/site/modules/Apache/JAF/MyJAF/pages
+    # optional -- default value is shown
     PerlSetVar Apache_JAF_Compiled /tmp
   </Location>
 
@@ -552,7 +574,8 @@ away with C<DECLINE>.
 Otherwise instance of Apache::JAF's descendant is created and C<setup_handler> method is called. 
 You B<must override> this method and return determined handler name. Usually it's first part of 
 uri or just C<index>. Also handlers from C<Apache_JAF_Modules> folder is loaded into package's 
-namespace.
+namespace if C<$self-E<gt>{debug_level}> E<gt> 0 or handlers were not loaded during module
+compilation.
 
 =item 3
 
@@ -566,10 +589,10 @@ C<FORBIDDEN> and so on). The sample is shown in L<"SYNOPSIS">.
 =item 4
 
 If result of previous step return OK, and C<$self-E<gt>{type}> property is C<text/*> 
-result of processing template is printing to the client. If type of result is not text,
-then one more method must be implemented: C<on_send_I<E<lt>handeler nameE<gt>>_data>.
-It have to print binary data back to the client. This way you may create handlers for
-dynamic generation of images, MS Excel workbooks and any other type of data.
+result of processing template is printing to the client. If type of result type is not 
+like text, one more method is needed to implement: C<on_send_I<E<lt>handeler nameE<gt>>_data>.
+It must print binary data back to the client. This way you may create handlers for
+dynamic generation of images, M$ Excel workbooks and any other type of data.
 
 =back
 
@@ -579,17 +602,11 @@ dynamic generation of images, MS Excel workbooks and any other type of data.
 
 =item setup_handler
 
-I<blah-blah-blah>
-
 =item site_handler
-
-I<blah-blah-blah>
 
 =back
 
 =head2 Implementing handlers
-
-I<blah-blah-blah>
 
 =head2 Templates structure and syntax
 
