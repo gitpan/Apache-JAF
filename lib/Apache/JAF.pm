@@ -2,9 +2,6 @@ package Apache::JAF;
 
 use 5.6.0;
 use strict;
-### use warnings 'all';
-### no  warnings 'redefine';
-### use diagnostics;
 
 use Template ();
 use Template::Provider;
@@ -23,12 +20,11 @@ use Apache::Constants qw( :common REDIRECT );
 use Apache::File ();
 
 use Data::Dumper qw( Dumper );
-use DirHandle ();
 use File::Find ();
 
 our $WIN32 = $^O =~ /win32/i;
 our $RX = $WIN32 ? qr/\:(?!(?:\/|\\))/ : qr/\:/;
-our $VERSION = do { my @r = (q$Revision: 0.17 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
+our $VERSION = do { my @r = (q$Revision: 0.21 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
 
 # Constructor
 ################################################################################
@@ -61,9 +57,6 @@ sub new {
 
   # uri - reference to array that contains uri plitted by '/'
   my @uri = split '/', $self->{r}->uri;
-
-  warn join ', ', @uri;
-
   shift @uri if $prefix;
   splice @uri, 0, ($prefix || 1);
   if (@uri) {
@@ -74,9 +67,6 @@ sub new {
       $i++;
     }
   }
-
-  warn join ', ', @uri;
-
   $self->{uri} = \@uri;
 
   # res - result hash, that passed to the template
@@ -155,11 +145,24 @@ sub import {
 
 # Load handlers
 ################################################################################
+our (%HANDLERS, $PACKAGE);
+
+sub _process_as_handler {
+  return unless /\.pm$/;
+  my $text = undef;
+  if (-f && -r) {
+    open IN, $_;
+    $text = do { local $/; <IN> };
+    close IN;
+    $HANDLERS{ $_ }{TEXT} = $text;
+  }
+}
+
 sub load_handlers {
   my ($self, $package, $dir) = @_;
   $dir ||= $self->{modules} if $self;
 
-  unless ($dir) {
+  if ($dir eq 'auto') {
     $dir = $INC{ do { (my $dummy = $package) =~ s/::/\//g; "$dummy.pm"; } };
     $dir =~ s/\.pm$/\/pages\//;
     undef $dir unless -d $dir;
@@ -167,23 +170,38 @@ sub load_handlers {
     $dir .= '/' if $dir !~ /\/$/;
   }  
 
-  { no strict 'refs'; ${ "${package}::HANDLERS_LOADED" } = 1; }
+  if (defined $dir && -d $dir) {
+    local %HANDLERS = ();
+    File::Find::find({ wanted => \&_process_as_handler, no_chdir => 1 }, $dir);
 
-  my $dh = DirHandle->new($dir) || die "Folder for handlers doesn't exists: $dir";
-  foreach my $file ($dh->read) {
-    next if $file !~ /\.pm$/;
+    local $PACKAGE = qq{package $package; use strict;\n};
+    my $line = 2;
+    foreach my $file (keys %HANDLERS) {
+      my $lines = $HANDLERS{ $file }{TEXT} =~ s/(\n)/$1/sg;
+      $HANDLERS{ $file }{START} = $line;
+      $HANDLERS{ $file }{END} = $line += $lines + 1;
+      $PACKAGE .= $HANDLERS{ $file }{TEXT} . "\n";
+    }
+    $PACKAGE .= qq{\nour \$HANDLERS_LOADED=1;\n};
 
-    open PM, "<$dir/$file";
-    my $code = do { local $/; <PM> };
-    close PM;
-    $code = "package $package; use strict; $code";
-    $self && $self->warn(9, "Loading $dir/$file:\n$code");
-    eval "$code";
+    $self && $self->warn(9, "Loading handlers for $package:\n $PACKAGE");
+    eval $PACKAGE;
+
     if ($@) {
-      my $err = "$dir/$file - compile error: $@";
-      $self && $self->warn(0, $err) || die $err;
-      no strict 'refs';
-      ${ "${package}::HANDLERS_LOADED" } = 0;
+      (my $error = $@) =~ s/\(eval\s+\d+\)(\s+line\s+)(\d+)/
+      do {
+        my $replace = q{(can't find where...)};
+        foreach my $file (keys %HANDLERS) {
+          if ($HANDLERS{ $file }{START} <= $2 && $2 < $HANDLERS{ $file }{END}) {
+            $replace = "($file)$1" . ($2 - $HANDLERS{ $file }{START} + 1);
+            last;
+          }
+        }
+        $replace;
+      }
+      /egx;
+
+      $self && $self->warn(0, $error) || die $error;
     }
   }
 }
@@ -223,7 +241,7 @@ sub load_templates {
   }
 
   $dir ||= $self->{templates} if $self;
-  unless ($dir) {
+  if ($dir eq 'auto') {
     $dir = $INC{ do { (my $dummy = $package) =~ s/::/\//g; "$dummy.pm"; } };
     $dir =~ s/modules\/.*$/templates\//;
   }
@@ -286,22 +304,16 @@ sub warn {
 ################################################################################
 sub _exists {
   my ($self, $dir, $name, $self_provider) = @_;
-  unless ($self_provider) {
-    if (-f $dir . "/$name") {
-      $self->warn(1, 'Ready to process template: /' . $name);
-      $self->{template} = $name;
-      return 1
-    }
-  } else {
+      
+  return 0 unless $self_provider ? do { 
     no strict 'refs';
     my $t = "${\( ref $self )}::TEMPLATES";
-    if (exists $$t->{"$dir/$name"}) {
-      $self->warn(1, 'Ready to process template: /' . $name);
-      $self->{template} = $name;
-      return 1
-    }
-  }
-  return 0
+    exists $$t->{"$dir/$name"};
+  } : -f $dir . "/$name";
+
+  $self->warn(1, 'Template: /' . $name);
+  $self->{template} = $name;
+  return 1
 }
 
 # Process template
@@ -314,14 +326,17 @@ sub process_template {
   local $Template::Config::PROVIDER = ref $self if $self_provider;
   local $Template::Config::STASH = 'Template::Stash::XS';
 
-  my $tx = "(\\$self->{template_ext})\$";
-  foreach (split $RX, $self->{templates}) {
-    my $test_name = (join '/', ($self->{handler}, @{$self->{uri}})) . $self->{template_ext};
-    last if $self->_exists($_, $test_name, $self_provider);
-    $test_name =~ s{$tx}{/index$1};
-    last if $self->_exists($_, $test_name, $self_provider);
+  unless ($self->{template}) {
+    my $tx = "(\\$self->{template_ext})\$";
+    foreach (split $RX, $self->{templates}) {
+      my $test_name = (join '/', ($self->{handler}, @{$self->{uri}})) . $self->{template_ext};
+      last if $self->_exists($_, $test_name, $self_provider);
+      $test_name =~ s{$tx}{/index$1};
+      last if $self->_exists($_, $test_name, $self_provider);
+    }
+    $self->{template} ||= $self->{handler} . $self->{template_ext};
   }
-  $self->{template} ||= ($self->{handler} . $self->{template_ext}, $self->warn(1, 'Ready to process template for handler: ' . $self->{handler}))[0];
+  $self->warn(1, 'Ready to process template for handler: ' . $self->{handler});
 
   my $tt = Template->new({
     INCLUDE_PATH => $self->{templates}, 
@@ -574,10 +589,9 @@ Apache::JAF -- mod_perl and Template-Toolkit web applications framework
  use strict;
  use JAF::MyJAF; # optional
  # loading mini-handlers & templates during compilation time
- # Warning! Syntax was changed!
  use Apache::JAF (
-   pages => '/examples/site/modules/Apache/JAF/MyJAF/pages/',
-   templates => '/examples/site/templates/'
+   handlers => '/examples/site/modules/Apache/JAF/MyJAF/pages/', # 'auto' if you want to use suggested file structure
+   templates => '/examples/site/templates/'                      # the same comment
  );
  our @ISA = qw(Apache::JAF);
 

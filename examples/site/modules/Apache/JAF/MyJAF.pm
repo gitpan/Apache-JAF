@@ -4,7 +4,7 @@ use strict;
 use Apache::Constants qw(:common);
 
 use JAF::MyJAF; # optional -- for database-driven site only
-use Apache::JAF;
+use Apache::JAF (handlers => 'auto', templates => 'auto');
 our @ISA = qw(Apache::JAF);
 
 # determine handler to call 

@@ -1,5 +1,19 @@
 Revision history for Perl extension Apache::JAF.
 
+0.21 Wed Feb 25 13:12 2004
+        - fixed bug with invalid templates for handlers, that subsitutes it's own templates
+        (Andrew Kuznecov <mcdemon@magenta-technology.ru>)
+
+0.20 Tue Feb 10 17:44 2004
+        - error reporting improvements during handlers loading phase
+
+0.19 Tue Feb 10 13:48 2004
+        - algorithm of loading mini-handlers has been changed
+        - added keyword 'auto' to Apache::JAF import paramaters for using suggested dirs
+
+0.18 Mon Feb 09 15:07 2004
+        - fixed bug in loading JAF descendant modules
+
 0.17 Tue Jan 13 17:09 2003
 	- fixed bug, when request with protocol string in uri-params produce 500 SERVER_ERROR.
           For now Apache::JAF simple ignore m{\w+://} params.

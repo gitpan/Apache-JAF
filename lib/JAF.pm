@@ -1,23 +1,28 @@
 package JAF;
 
 use strict;
-BEGIN {
+our %IMPORTED = ();
 
+sub import {
   my $cl = 0;
-  my $caller;
+  my ($filename, $sub);
   do {
-    $caller = (caller($cl))[0];
-    $cl++
-  } while ( $caller && $caller !~ /^_?JAF/);
-  $caller =~ s/::/\//g;
-  ($caller = $INC{$caller .'.pm'}) =~ s/\.pm/\//;
+    ($filename, $sub) = (caller($cl))[1,3];
+    $cl++;
+  } while ( $filename && $sub ne '(eval)');
 
-  use DirHandle;
-  if (my $dh = DirHandle->new( $caller )) {
-    foreach my $file ($dh->read) {
-      next if $file !~ /\.pm$/;
-      require "$caller$file";
+  if ($filename) {
+    return if exists $IMPORTED{$filename};
+    $filename =~ s/\.pm$/\//;
+    use DirHandle;
+    if (my $dh = DirHandle->new( $filename )) {
+      foreach my $file ($dh->read) {
+        next if $file !~ /\.pm$/;
+        require "$filename$file";
+      }
     }
+
+    $IMPORTED{$filename} = 1;
   }
 }
 
@@ -53,7 +58,6 @@ sub messages () {
   return @$new ? $new : undef;
 }
 
-# ???
 ################################################################################
 sub AUTOLOAD {
   no strict 'refs';
@@ -63,15 +67,8 @@ sub AUTOLOAD {
   return if $module eq 'DESTROY'; 
 
   my $pkg = ref($self) . '::' . $module;
-  ### eval("use $pkg");
-  
-###  unless ($@) {
-    $self->{$module} ||= "$pkg"->new({ parent => $self, dbh => $self->{dbh} });
-    return $self->{$module};
-###  } else {
-###    warn $@;
-###  }
-###  return undef;
+  $self->{$module} ||= "$pkg"->new({ parent => $self, dbh => $self->{dbh} });
+  return $self->{$module};
 }
 
 1;

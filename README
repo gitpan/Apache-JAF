@@ -7,10 +7,9 @@ SYNOPSIS
          use strict;
          use JAF::MyJAF; # optional
          # loading mini-handlers & templates during compilation time
-         # Warning! Syntax was changed!
          use Apache::JAF (
-           pages => '/examples/site/modules/Apache/JAF/MyJAF/pages/',
-           templates => '/examples/site/templates/'
+           handlers => '/examples/site/modules/Apache/JAF/MyJAF/pages/', # 'auto' if you want to use suggested file structure
+           templates => '/examples/site/templates/'                      # the same comment
          );
          our @ISA = qw(Apache::JAF);
 
