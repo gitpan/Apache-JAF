@@ -1,8 +1,7 @@
 package JAF::DBI::mysql;
 
-use JAF::DBI;
-
-our @ISA = qw(JAF::DBI);
+use strict;
+use base qw( JAF::DBI );
 
 sub last_insert_id { $_[0]->{dbh}->{mysql_insertid} }
 

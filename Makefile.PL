@@ -9,7 +9,8 @@ my $modules = [
       ['Apache'          => 'mod_perl is required'],
       ['Apache::Request' => 'libapreq is required'],
       ['Template 2.08'   => 'Framework is based on Template-Toolkit'],
-      ['DirHandle'       => 'This is used for additional handlers loading'],
+      ['DirHandle'       => 'This module is used for additional handlers loading'],
+      ['File::Find'      => 'For compile-time templates loading'],
       ['Data::Dumper'    => 'Used for logging purposes'],
     ],
     [

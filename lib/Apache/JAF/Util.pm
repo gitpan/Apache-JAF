@@ -2,8 +2,7 @@ package Apache::JAF::Util;
 
 use strict;
 use Apache;
-use Apache::Util();
-use JAF::Util();
+use Apache::Util ();
 
 ### Content
 
@@ -24,7 +23,7 @@ sub escape_html {
 
 sub valid_html {
   my $string = shift;
-  $string = Apache::Site::Util::escape_html($string) if $ENV{MOD_PERL};
+  $string = escape_html($string) if $ENV{MOD_PERL};
   $string =~ s/\</\&lt;/g;
   $string =~ s/\>/\&gt;/g;
   $string =~ s/\n{2,}/<p>/sg;
@@ -44,10 +43,10 @@ sub get_navigation {
   for (my ($i,$j) = (0, int -$navigation_count/2); $i < $navigation_count;) {
     last if ($start + $j*$records_per_page > $count);
   
-    unless ( $start + $j*$records_per_page  < 0 ) {
-      push @{$return->{pages}}, {link => $start + $j*$records_per_page || 1,
+    if ( $start + ($j+1)*$records_per_page > 1 ) {
+      push @{$return->{pages}}, {link => ($start + $j*$records_per_page > 0) ? $start + $j*$records_per_page : 1,
                                  selected => !$j,
-                                 title =>  ($start + $j*$records_per_page || 1)
+                                 title =>  (($start + $j*$records_per_page > 0) ? $start + $j*$records_per_page : 1)
                                 ."-".
                                  (($start + ($j+1)*$records_per_page - 1 > $count) ? $count : $start + ($j+1)*$records_per_page - 1)};
       $i++

@@ -6,9 +6,12 @@ SYNOPSIS
          package Apache::JAF::MyJAF;
          use strict;
          use JAF::MyJAF; # optional
-         # loading mini-handlers during compilation time
-         # this folder will be used by default but you can change it
-         use Apache::JAF qw(/examples/site/modules/Apache/JAF/MyJAF/pages);
+         # loading mini-handlers & templates during compilation time
+         # Warning! Syntax was changed!
+         use Apache::JAF (
+           pages => '/examples/site/modules/Apache/JAF/MyJAF/pages/',
+           templates => '/examples/site/templates/'
+         );
          our @ISA = qw(Apache::JAF);
 
          # determine handler to call 
@@ -43,8 +46,7 @@ SYNOPSIS
          package JAF::MyJAF;
          use strict;
          use DBI;
-         use JAF;
-         our @ISA = qw(JAF);
+         use base qw( JAF );
 
          sub new {
            my ($class, $self) = @_;
@@ -63,9 +65,9 @@ SYNOPSIS
             SetHandler perl-script
             PerlHandler Apache::JAF::MyJAF
             PerlSetVar Apache_JAF_Templates /examples/site/templates
-            # optional (default value is used in example)
+            # optional or can be specified in Apache::JAF descendant (default value is used in example)
             PerlSetVar Apache_JAF_Modules /examples/site/modules/Apache/JAF/MyJAF/pages
-            # optional (default value is used in example)
+            # optional or can be specified in Apache::JAF descendant (default value is used in example)
             PerlSetVar Apache_JAF_Compiled /tmp
           </Location>
 
@@ -183,7 +185,9 @@ DESCRIPTION
         Default handler status is "NOT_FOUND".
 
     type
-        Default content-type is "text/html".
+        Default content-type is "text/html". You can call
+        "$self->download_type()" for set unexisting MIME-type to force
+        browser download content instead of viewing it.
 
     template_ext, include_ext
         Default template extension is ".html". Default include template
@@ -196,7 +200,8 @@ DESCRIPTION
         Site-wide pre- and post-include templates. Defalut values are
         "header" and "footer". *Note:*You must undef this properies if you
         want create page-template without it. For example for page in pop-up
-        window.
+        window ("disable_header", "disable_footer", and
+        "disable_header_footer" methods).
 
     templates
         Path to the templates folder. You may have different sets of

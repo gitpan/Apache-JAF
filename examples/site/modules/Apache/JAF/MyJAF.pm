@@ -1,5 +1,8 @@
 package Apache::JAF::MyJAF;
 use strict;
+
+use Apache::Constants qw(:common);
+
 use JAF::MyJAF; # optional -- for database-driven site only
 use Apache::JAF;
 our @ISA = qw(Apache::JAF);

@@ -7,6 +7,7 @@ lib/JAF.pm
 lib/JAF/DBI.pm
 lib/JAF/DBI/mysql.pm
 lib/JAF/DBI/Pg.pm
+lib/JAF/DBI/Oracle.pm
 lib/JAF/Util.pm
 lib/Apache/JAF.pm
 lib/Apache/JAF/Cookies.pm

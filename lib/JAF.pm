@@ -1,6 +1,26 @@
 package JAF;
 
 use strict;
+BEGIN {
+
+  my $cl = 0;
+  my $caller;
+  do {
+    $caller = (caller($cl))[0];
+    $cl++
+  } while ( $caller && $caller !~ /^_?JAF/);
+  $caller =~ s/::/\//g;
+  ($caller = $INC{$caller .'.pm'}) =~ s/\.pm/\//;
+
+  use DirHandle;
+  my $dh = DirHandle->new( $caller );
+  
+  foreach my $file ($dh->read) {
+    next if $file !~ /\.pm$/;
+    require "$caller$file";
+  }
+
+}
 
 # set error
 ################################################################################
@@ -37,21 +57,22 @@ sub messages () {
 # ???
 ################################################################################
 sub AUTOLOAD {
+  no strict 'refs';
   my $self = shift;
   my $module = our $AUTOLOAD;
   $module =~ s/.*:://;
   return if $module eq 'DESTROY'; 
 
   my $pkg = ref($self) . '::' . $module;
-  eval("use $pkg");
+  ### eval("use $pkg");
   
-  unless ($@) {
+###  unless ($@) {
     $self->{$module} ||= "$pkg"->new({ parent => $self, dbh => $self->{dbh} });
     return $self->{$module};
-  } else {
-    warn $@;
-  }
-  return undef;
+###  } else {
+###    warn $@;
+###  }
+###  return undef;
 }
 
 1;

@@ -1,43 +1,67 @@
 package Apache::JAF;
-use strict;
 
 use 5.6.0;
+use strict;
+### use warnings 'all';
+### no  warnings 'redefine';
+### use diagnostics;
 
 use Template ();
-use Data::Dumper qw(Dumper);
-use DirHandle ();
+use Template::Provider;
+use Template::Parser;
+use Template::Document;
+
+our @ISA = qw( Template::Provider );
 
 use Apache ();
 use Apache::Util ();
 use Apache::JAF::Util ();
 use Apache::Request ();
-use Apache::Constants qw(:common REDIRECT);
+use Apache::Constants qw( :common REDIRECT );
 use Apache::File ();
 
+use Data::Dumper qw( Dumper );
+use DirHandle ();
+use File::Find ();
+
 our $WIN32 = $^O =~ /win32/i;
-our $VERSION = do { my @r = (q$Revision: 0.06 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
+our $RX = $WIN32 ? qr/\:(?!(?:\/|\\))/ : qr/\:/;
+our $VERSION = do { my @r = (q$Revision: 0.14 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
 
 # Constructor
 ################################################################################
 sub new {
   my ($ref, $r) = @_;
-  $r = Apache::Request->new($r);
-
   my $self  = {};
+
+  #
+  # use as template provider
+  #
+  if (ref($r) eq 'HASH') {
+    $self = $ref->SUPER::new($r);
+    bless ($self, $ref);
+    return $self;
+  }
+
+  #
+  # use as framework
+  #
+  $r = Apache::Request->instance($r);
   bless ($self, $ref);
 
   # r - request (filter-aware)
-  $self->{filter} = $r->dir_config('Filter') =~ /^on/i;
+  $self->{filter} = lc $r->dir_config('Filter') eq 'on';
   $self->{r} = $self->{filter} ? $r->filter_register() : $r;
-  my $prefix = $r->dir_config('Apache_JAF_Prefix');
+  my $prefix = $r->dir_config('Apache_JAF_Prefix') || 0;
 
   # prefix - path|number of subdirs that must be removed from uri
-  $prefix = ($prefix =~ /^\/(.*)$/) ? scalar(split '/', $1) : int($prefix);
+  $prefix = ($prefix =~ /^\/(.*)$/) ? scalar(my @tmp = split '/', $1) : int($prefix);
 
   # uri - reference to array that contains uri plitted by '/'
   my @uri = split '/', $self->{r}->uri;
   shift @uri if $prefix;
   splice @uri, 0, ($prefix || 1);
+  $uri[-1] =~ s/\.html?$//i if @uri;
   $self->{uri} = \@uri;
 
   # res - result hash, that passed to the template
@@ -74,6 +98,8 @@ sub new {
 
   # Templates folder
   $self->{templates} = $self->{r}->dir_config('Apache_JAF_Templates');
+  # Modules folder
+  $self->{modules} = $self->{r}->dir_config('Apache_JAF_Modules');
 
   # Compiled templates folder  
   $self->{compile_dir} = $self->{r}->dir_config('Apache_JAF_Compiled') || '/tmp';
@@ -90,8 +116,12 @@ sub new {
 
   # Load handlers if $HANDLERS_LOADED flag is unset or 
   # we are in debug mode ($self->{debug_level} > 0)
+  # reload modified templates also
   my $package = ref $self;
-  $self->load_handlers($package) if $self->{debug_level} || !eval('$' . $package . '::HANDLERS_LOADED');
+  { no strict 'refs';
+    $self->load_handlers($package, $self->{modules}) if $self->{debug_level} || !${ "${package}::HANDLERS_LOADED" };
+    $self->load_templates($package, $self->{templates}, 1) if $self->{debug_level} && ${ "${package}::SELF_PROVIDER" };
+  }
 
   # {page} key in result hash equals to current handler
   $self->{res}{page} = $self->{handler};
@@ -99,35 +129,37 @@ sub new {
   return $self
 }
 
-# Try to load handlers at compile-time
+# Load handlers and temlates during compile-time...
 ################################################################################
 sub import {
-  my $package = (caller())[0];
-  my $dir = $_[1];
-  load_handlers(undef, $package, $dir) if $dir && $package ne __PACKAGE__;
+  my ($package, %args) = @_;
+  $package = (caller())[0];
+  load_handlers(undef, $package, $args{handlers}) if $args{handlers};
+  load_templates(undef, $package, $args{templates}) if $args{templates};
 }
 
-# Load additional handlers
+# Load handlers
 ################################################################################
 sub load_handlers {
   my ($self, $package, $dir) = @_;
-  $dir ||= $self->{r}->dir_config('Apache_JAF_Modules') if $self;
+  $dir ||= $self->{modules} if $self;
 
   unless ($dir) {
     $dir = $INC{ do { (my $dummy = $package) =~ s/::/\//g; "$dummy.pm"; } };
     $dir =~ s/\.pm$/\/pages\//;
     undef $dir unless -d $dir;
-  }
+  } else {
+    $dir .= '/' if $dir !~ /\/$/;
+  }  
 
-  eval "\$${package}::HANDLERS_LOADED = 1;";
+  { no strict 'refs'; ${ "${package}::HANDLERS_LOADED" } = 1; }
 
-  my $dh = DirHandle->new($dir);
+  my $dh = DirHandle->new($dir) || die "Folder for handlers doesn't exists: $dir";
   foreach my $file ($dh->read) {
     next if $file !~ /\.pm$/;
 
-    local $/;
     open PM, "<$dir/$file";
-    my $code = <PM>;
+    my $code = do { local $/; <PM> };
     close PM;
     $code = "package $package; use strict; $code";
     $self && $self->warn(9, "Loading $dir/$file:\n$code");
@@ -135,9 +167,79 @@ sub load_handlers {
     if ($@) {
       my $err = "$dir/$file - compile error: $@";
       $self && $self->warn(0, $err) || die $err;
-      eval "\$${package}::HANDLERS_LOADED = 0;";
+      no strict 'refs';
+      ${ "${package}::HANDLERS_LOADED" } = 0;
     }
   }
+}
+
+# Load templates
+################################################################################
+our ($TEMPLATES, $PARSER);
+
+sub _process_as_template {
+  if (exists $TEMPLATES->{$_} && 
+     (stat)[9] <= $TEMPLATES->{$_}{mtime} && 
+     !$TEMPLATES->{$_}{error}) {
+    return
+  }
+
+  if (-f && -r) {
+    open IN, $_;
+    my $text = do { local $/; <IN> };
+    close IN;
+    unless ($TEMPLATES->{$_}{code} = Template::Document->new( $PARSER->parse($text) )) {
+      $TEMPLATES->{$_}{error} = $PARSER->error();
+    } else {
+      $TEMPLATES->{$_}{mtime} = (stat(_))[9];
+    }
+  }
+}
+
+sub load_templates {
+  my ($self, $package, $dir, $reload) = @_;
+
+  local $TEMPLATES = {};
+  local $PARSER = Template::Parser->new();
+
+  if ($reload) {
+    no strict 'refs';
+    $TEMPLATES = { %${ "${package}::TEMPLATES" } };
+  }
+
+  $dir ||= $self->{templates} if $self;
+  unless ($dir) {
+    $dir = $INC{ do { (my $dummy = $package) =~ s/::/\//g; "$dummy.pm"; } };
+    $dir =~ s/modules\/.*$/templates\//;
+  }
+
+  File::Find::find({ wanted => \&_process_as_template, no_chdir => 1 }, split $RX, $dir);
+
+  { no strict 'refs';
+    ${ "${package}::SELF_PROVIDER" } ||= 1;
+    ${ "${package}::TEMPLATES" } = { ${ "${package}::TEMPLATES" } ? %${ "${package}::TEMPLATES" } : (), %${ 'TEMPLATES' } };
+  }
+}
+
+sub fetch {
+  my ($self, $name) = @_;
+  my $ref;
+  my $t = "${\( ref $self )}::TEMPLATES";
+  { no strict 'refs';
+    $ref = $$t;
+  }
+  foreach my $p (@{$self->paths()}) {
+    my $full_name = "$p/$name";
+    if (exists $ref->{$full_name}) {
+      if ((stat($full_name))[9] > $ref->{$full_name}{mtime}) {
+        load_templates(undef, ref $self, $p);
+        no strict 'refs';
+        $ref = $$t;
+      }
+      return wantarray ? ($ref->{$full_name}{code}, $ref->{$full_name}{error}) : $ref->{$full_name}{code};
+    }
+  }
+  return (undef, undef);
 }
 
 # ABSTRACT: setup_handler must be implemented in derived 
@@ -160,17 +262,29 @@ sub warn {
   my $method = $level ? 'warn' : 'log_error';
   #
   # server_name included in warning string to distinguish different servers in
-  # overall error log... (WebZavod default behavior) 
+  # overall error log... (default behavior) 
   #
   $self->{r}->$method('[' . $self->{r}->get_server_name() . '] ' . $message) if $self->{debug_level} >= $level;
 }
 
+# Check template existance
+################################################################################
 sub _exists {
-  my ($self, $dir, $name) = @_;
-  if (-f $dir . "/$name") {
-    $self->warn(1, 'Ready to process template: /' . $name);
-    $self->{template} = $name;
-    return 1
+  my ($self, $dir, $name, $self_provider) = @_;
+  unless ($self_provider) {
+    if (-f $dir . "/$name") {
+      $self->warn(1, 'Ready to process template: /' . $name);
+      $self->{template} = $name;
+      return 1
+    }
+  } else {
+    no strict 'refs';
+    my $t = "${\( ref $self )}::TEMPLATES";
+    if (exists $$t->{"$dir/$name"}) {
+      $self->warn(1, 'Ready to process template: /' . $name);
+      $self->{template} = $name;
+      return 1
+    }
   }
   return 0
 }
@@ -180,28 +294,31 @@ sub _exists {
 sub process_template {
   my ($self) = @_;
 
-  my $rx = $WIN32 ? qr/\:(?!(?:\/|\\))/ : qr/\:/;
+  my $self_provider;
+  { no strict 'refs'; $self_provider = ${ "${\( ref $self )}::SELF_PROVIDER" }; }
+  local $Template::Config::PROVIDER = ref $self if $self_provider;
+  local $Template::Config::STASH = 'Template::Stash::XS';
+
   my $tx = "(\\$self->{template_ext})\$";
-  foreach (split $rx, $self->{templates}) {
+  foreach (split $RX, $self->{templates}) {
     my $test_name = (join '/', ($self->{handler}, @{$self->{uri}})) . $self->{template_ext};
-    last if $self->_exists($_, $test_name);
+    last if $self->_exists($_, $test_name, $self_provider);
     $test_name =~ s{$tx}{/index$1};
-    last if $self->_exists($_, $test_name);
+    last if $self->_exists($_, $test_name, $self_provider);
   }
   $self->{template} ||= ($self->{handler} . $self->{template_ext}, $self->warn(1, 'Ready to process template for handler: ' . $self->{handler}))[0];
 
-  $Template::Config::STASH = 'Template::Stash::XS';
-
   my $tt = Template->new({
     INCLUDE_PATH => $self->{templates}, 
-    PRE_CHOMP => $self->{pre_chomp}, 
-    POST_CHOMP => $self->{post_chomp},
-    TRIM => $self->{trim},
-    ($self->{compile_dir} ? (COMPILE_DIR => $self->{compile_dir}) : ()),
+    $self_provider ? () : (
+      PRE_CHOMP => $self->{pre_chomp}, 
+      POST_CHOMP => $self->{post_chomp},
+      TRIM => $self->{trim},
+      ($self->{compile_dir} ? (COMPILE_DIR => $self->{compile_dir}) : ()),
+    ),
     ($self->{default_include} || $self->{header} ? ('PRE_PROCESS'  => [$self->{default_include} && $self->{default_include} . $self->{include_ext} || (), $self->{header} && $self->{header} . $self->{include_ext} || ()]) : ()),
     ($self->{footer} ? ('POST_PROCESS' => $self->{footer} . $self->{include_ext}) : ())
   });
-
   $self->warn(4, 'Template variables: ' . Dumper $self->{res});
 
   my $result;
@@ -223,6 +340,10 @@ sub process_template {
   return \$result;
 }
 
+# Reduce stat calls (only dynamic content from mod_perl-powered server)
+################################################################################
+sub trans_handler ($$) { OK }
+
 # Actual Apache handler
 ################################################################################
 sub handler ($$) {
@@ -231,8 +352,9 @@ sub handler ($$) {
   eval "use Time::HiRes ()";
   $time = Time::HiRes::time() unless $@;
 
-  if (-f $r->filename()) {
-    $r->set_handlers(PerlHandler => undef);
+  if (-f $r->document_root() . $r->uri() && -r _) {
+    $r->filename($r->document_root() . $r->uri());
+    $r->warn('Static file request: ' . $r->filename());
     return DECLINED;
   }
 
@@ -335,6 +457,8 @@ sub site_handler {
   return $self->{status};
 }
 
+### Additional utility methods for getting params
+
 sub param {
   my ($self, $p) = @_;
   my @params = map { $_ = JAF::Util::trim($_); length > 0 ? $_ : undef} ($self->{r}->param($p));
@@ -349,6 +473,16 @@ sub upload_fh {
   }
   return undef
 }
+
+### Methods for simplify handlers for download content instead of viewing it
+
+sub disable_header { undef $_[0]->{header} }
+sub disable_footer { undef $_[0]->{footer} }
+sub disable_header_footer { $_[0]->disable_header(); $_[0]->disable_footer(); }
+sub download_type { $_[0]->{type} = 'application/x-force-download'; }
+sub download_it { $_[0]->disable_header_footer(); $_[0]->download_type(); }
+
+### methods for JAF database editing
 
 sub default_record_edit {
   my ($self, $tbl, $options) = @_;
@@ -411,9 +545,6 @@ sub default_messages {
   } 
 }
 
-1;
-
-
 =head1 NAME
 
 Apache::JAF -- mod_perl and Template-Toolkit web applications framework
@@ -427,9 +558,12 @@ Apache::JAF -- mod_perl and Template-Toolkit web applications framework
  package Apache::JAF::MyJAF;
  use strict;
  use JAF::MyJAF; # optional
- # loading mini-handlers during compilation time
- # this folder will be used by default but you can change it
- use Apache::JAF qw(/examples/site/modules/Apache/JAF/MyJAF/pages);
+ # loading mini-handlers & templates during compilation time
+ # Warning! Syntax was changed!
+ use Apache::JAF (
+   pages => '/examples/site/modules/Apache/JAF/MyJAF/pages/',
+   templates => '/examples/site/templates/'
+ );
  our @ISA = qw(Apache::JAF);
 
  # determine handler to call 
@@ -466,8 +600,7 @@ Apache::JAF -- mod_perl and Template-Toolkit web applications framework
  package JAF::MyJAF;
  use strict;
  use DBI;
- use JAF;
- our @ISA = qw(JAF);
+ use base qw( JAF );
 
  sub new {
    my ($class, $self) = @_;
@@ -487,9 +620,9 @@ Apache::JAF -- mod_perl and Template-Toolkit web applications framework
     SetHandler perl-script
     PerlHandler Apache::JAF::MyJAF
     PerlSetVar Apache_JAF_Templates /examples/site/templates
-    # optional (default value is used in example)
+    # optional or can be specified in Apache::JAF descendant (default value is used in example)
     PerlSetVar Apache_JAF_Modules /examples/site/modules/Apache/JAF/MyJAF/pages
-    # optional (default value is used in example)
+    # optional or can be specified in Apache::JAF descendant (default value is used in example)
     PerlSetVar Apache_JAF_Compiled /tmp
   </Location>
 
@@ -650,7 +783,8 @@ Default handler status is C<NOT_FOUND>.
 
 =item type
 
-Default content-type is C<text/html>.
+Default content-type is C<text/html>. You can call C<$self-E<gt>download_type()> 
+for set unexisting MIME-type to force browser download content instead of viewing it.
 
 =item template_ext, include_ext
 
@@ -665,7 +799,8 @@ Site-wide include template. Default value is... C<default>.
 
 Site-wide pre- and post-include templates. Defalut values are C<header> and C<footer>.
 I<Note:>You must undef this properies if you want create page-template without it. For
-example for page in pop-up window.
+example for page in pop-up window (C<disable_header>, C<disable_footer>, and 
+C<disable_header_footer> methods).
 
 =item templates
 
@@ -806,3 +941,5 @@ Greg "Grishace" Belenky <greg@webzavod.ru>
 This module is free software; you can redistribute it and/or modify it under the same terms as Perl itself. 
 
 =cut
+
+'Grishace';
