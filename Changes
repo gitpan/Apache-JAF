@@ -1,5 +1,11 @@
 Revision history for Perl extension Apache::JAF.
 
+0.16 Tue Jan 13 12:16 2003
+	- used missed modules
+
+0.15 Wed Dec 24 16:44 2003
+        - fixed bug with autoloading additional modules
+
 0.14 Wed Dec 10 12:54 2003
         - new mini-handlers, templates, and JAF::DBI descendants preloading code
         - some additional utility methods for Apache::JAF

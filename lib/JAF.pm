@@ -13,13 +13,12 @@ BEGIN {
   ($caller = $INC{$caller .'.pm'}) =~ s/\.pm/\//;
 
   use DirHandle;
-  my $dh = DirHandle->new( $caller );
-  
-  foreach my $file ($dh->read) {
-    next if $file !~ /\.pm$/;
-    require "$caller$file";
+  if (my $dh = DirHandle->new( $caller )) {
+    foreach my $file ($dh->read) {
+      next if $file !~ /\.pm$/;
+      require "$caller$file";
+    }
   }
-
 }
 
 # set error

@@ -16,6 +16,8 @@ our @ISA = qw( Template::Provider );
 use Apache ();
 use Apache::Util ();
 use Apache::JAF::Util ();
+use JAF::Util ();
+
 use Apache::Request ();
 use Apache::Constants qw( :common REDIRECT );
 use Apache::File ();
@@ -26,7 +28,7 @@ use File::Find ();
 
 our $WIN32 = $^O =~ /win32/i;
 our $RX = $WIN32 ? qr/\:(?!(?:\/|\\))/ : qr/\:/;
-our $VERSION = do { my @r = (q$Revision: 0.14 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
+our $VERSION = do { my @r = (q$Revision: 0.16 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
 
 # Constructor
 ################################################################################
