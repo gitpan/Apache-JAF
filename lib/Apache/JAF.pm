@@ -28,7 +28,7 @@ use File::Find ();
 
 our $WIN32 = $^O =~ /win32/i;
 our $RX = $WIN32 ? qr/\:(?!(?:\/|\\))/ : qr/\:/;
-our $VERSION = do { my @r = (q$Revision: 0.16 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
+our $VERSION = do { my @r = (q$Revision: 0.17 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
 
 # Constructor
 ################################################################################
@@ -61,9 +61,22 @@ sub new {
 
   # uri - reference to array that contains uri plitted by '/'
   my @uri = split '/', $self->{r}->uri;
+
+  warn join ', ', @uri;
+
   shift @uri if $prefix;
   splice @uri, 0, ($prefix || 1);
-  $uri[-1] =~ s/\.html?$//i if @uri;
+  if (@uri) {
+    $uri[-1] =~ s/\.html?$//i;
+    my $i = 0;
+    while ($i < @uri) {
+      splice @uri, $i, 2 if $uri[$i] =~ /^\w+:$/ && !$uri[$i+1];
+      $i++;
+    }
+  }
+
+  warn join ', ', @uri;
+
   $self->{uri} = \@uri;
 
   # res - result hash, that passed to the template

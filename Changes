@@ -1,5 +1,9 @@
 Revision history for Perl extension Apache::JAF.
 
+0.17 Tue Jan 13 17:09 2003
+	- fixed bug, when request with protocol string in uri-params produce 500 SERVER_ERROR.
+          For now Apache::JAF simple ignore m{\w+://} params.
+
 0.16 Tue Jan 13 12:16 2003
 	- used missed modules
 
